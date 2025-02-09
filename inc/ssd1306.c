@@ -188,3 +188,22 @@ void ssd1306_draw_char(ssd1306_t *ssd, char c, uint8_t x, uint8_t y, uint8_t sca
         }
     }
 }
+
+// Função para desenhar uma string
+void ssd1306_draw_string(ssd1306_t *ssd, const char *str, uint8_t x, uint8_t y)
+{
+  while (*str)
+  {
+    ssd1306_draw_char(ssd, *str++, x, y, 1);
+    x += 8;
+    if (x + 8 >= ssd->width)
+    {
+      x = 0;
+      y += 8;
+    }
+    if (y + 8 >= ssd->height)
+    {
+      break;
+    }
+  }
+}
