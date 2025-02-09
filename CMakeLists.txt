@@ -35,7 +35,7 @@ pico_sdk_init()
 
 # Add executable. Default name is the project name, version 0.1
 
-add_executable(comunicacao-serial comunicacao-serial.c )
+add_executable(comunicacao-serial comunicacao-serial.c inc/ssd1306.c)
 
 pico_set_program_name(comunicacao-serial "comunicacao-serial")
 pico_set_program_version(comunicacao-serial "0.1")
@@ -57,7 +57,7 @@ target_include_directories(comunicacao-serial PRIVATE
 
 # Add any user requested libraries
 target_link_libraries(comunicacao-serial 
-        
+        hardware_i2c
         )
 pico_add_extra_outputs(comunicacao-serial)
 
