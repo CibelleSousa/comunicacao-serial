@@ -3,6 +3,10 @@
 #include "hardware/i2c.h"
 #include "inc/ssd1306.h"
 #include "inc/font.h"
+#include "hardware/pio.h"
+#include "hardware/clocks.h"
+#include "pico/bootrom.h"
+#include "serial.pio.h"
 
 // Defines
 #define I2C_PORT i2c1
@@ -11,36 +15,107 @@
 #define endereco 0x3C
 #define BTN_A 5
 #define BTN_B 6
+#define OUT_PIN 7
 #define LED_G 11
 #define LED_B 12
 
 // Variáveis Globais
-bool cor = false;
 static volatile uint32_t last_time = 0;
 ssd1306_t ssd;
+
+// Frames
+double contagem [10][25] = {
+    {0.25, 0.25, 0.25, 0.25, 0.25,
+     0.25, 0.00, 0.00, 0.00, 0.25,
+     0.25, 0.00, 0.00, 0.00, 0.25,
+     0.25, 0.00, 0.00, 0.00, 0.25,
+     0.25, 0.25, 0.25, 0.25, 0.25},
+
+     {0.25, 0.25, 0.25, 0.25, 0.25,
+      0.00, 0.00, 0.25, 0.00, 0.00,
+      0.00, 0.00, 0.25, 0.00, 0.25,
+      0.00, 0.25, 0.25, 0.00, 0.00,
+      0.00, 0.00, 0.25, 0.00, 0.00},
+    
+    {0.25, 0.25, 0.25, 0.25, 0.25,
+     0.25, 0.00, 0.00, 0.00, 0.00,
+     0.25, 0.25, 0.25, 0.25, 0.25,
+     0.00, 0.00, 0.00, 0.00, 0.25,
+     0.25, 0.25, 0.25, 0.25, 0.25},
+
+    {0.25, 0.25, 0.25, 0.25, 0.25,
+     0.00, 0.00, 0.00, 0.00, 0.25,
+     0.25, 0.25, 0.25, 0.25, 0.25,
+     0.00, 0.00, 0.00, 0.00, 0.25,
+     0.25, 0.25, 0.25, 0.25, 0.25},
+
+    {0.25, 0.00, 0.00, 0.00, 0.00,
+     0.00, 0.00, 0.00, 0.00, 0.25,
+     0.25, 0.25, 0.25, 0.25, 0.25,
+     0.25, 0.00, 0.00, 0.00, 0.25,
+     0.25, 0.00, 0.00, 0.00, 0.25},
+
+    {0.25, 0.25, 0.25, 0.25, 0.25,
+     0.00, 0.00, 0.00, 0.00, 0.25,
+     0.25, 0.25, 0.25, 0.25, 0.25,
+     0.25, 0.00, 0.00, 0.00, 0.00,
+     0.25, 0.25, 0.25, 0.25, 0.25},
+
+    {0.25, 0.25, 0.25, 0.25, 0.25,
+     0.25, 0.00, 0.00, 0.00, 0.25,
+     0.25, 0.25, 0.25, 0.25, 0.25,
+     0.25, 0.00, 0.00, 0.00, 0.00,
+     0.25, 0.25, 0.25, 0.25, 0.25},
+
+    {0.25, 0.00, 0.00, 0.00, 0.00,
+     0.00, 0.00, 0.00, 0.00, 0.25,
+     0.25, 0.00, 0.00, 0.00, 0.00,
+     0.25, 0.00, 0.00, 0.00, 0.25,
+     0.25, 0.25, 0.25, 0.25, 0.25},
+
+    {0.25, 0.25, 0.25, 0.25, 0.25,
+     0.25, 0.00, 0.00, 0.00, 0.25,
+     0.25, 0.25, 0.25, 0.25, 0.25,
+     0.25, 0.00, 0.00, 0.00, 0.25,
+     0.25, 0.25, 0.25, 0.25, 0.25},
+
+    {0.25, 0.00, 0.00, 0.00, 0.00,
+     0.00, 0.00, 0.00, 0.00, 0.25,
+     0.25, 0.25, 0.25, 0.25, 0.25,
+     0.25, 0.00, 0.00, 0.00, 0.25,
+     0.25, 0.25, 0.25, 0.25, 0.25}
+};
 
 // Prototipação das Funções
 void setup();
 void setupDisplay();
 void gpio_irq_handler(uint gpio, uint32_t events);
+void exibir_numero(PIO pio, uint sm, uint8_t num);
+uint32_t matrix_rgb(double r, double g, double b);
 
 int main()
 {
     // Configuração inicial dos GPIOs, interrupções e Display
+    set_sys_clock_khz(128000, false);
     stdio_init_all();
     setupDisplay();
     setup();
-    
 
+    PIO pio = pio0;
+    uint offset = pio_add_program(pio, &serial_program);
+    uint sm = pio_claim_unused_sm(pio, true);
+    serial_program_init(pio, sm, offset, OUT_PIN);
+    
     while (true) {
         if(stdio_usb_connected()){
             char c;
             if(scanf("%c", &c) == 1){
-                ssd1306_fill(&ssd, cor); // Limpa o display
+                ssd1306_fill(&ssd, false); // Limpa o display
                 ssd1306_draw_char(&ssd, c, 48, 16, 4);
-            }
-            if (c >= '0' || c <= '9'){
-                // implementar função que 'printa o número na matriz de LEDs
+                if (c >= '0' && c <= '9'){
+                    // Printa o número na matriz de LEDs
+                    exibir_numero(pio, sm, (c - '0'));
+                }
             }
         }
         ssd1306_send_data(&ssd); // Atualiza o display
@@ -94,18 +169,33 @@ void gpio_irq_handler(uint gpio, uint32_t events){
         ssd1306_fill(&ssd, false); // Limpa o display
         if(gpio == BTN_A){
             gpio_put(LED_G, !gpio_get(LED_G));
-            ssd1306_rect(&ssd, 3, 3, 122, 58, cor, !cor); // Desenha um retângulo
             ssd1306_draw_string(&ssd, "LED VERDE", 8, 10);
             ssd1306_draw_string(&ssd, "ALTERNADO", 8, 30);
             printf("LED verde alternado!\n");
         }
         else if(gpio == BTN_B){
             gpio_put(LED_B, !gpio_get(LED_B));
-            ssd1306_rect(&ssd, 3, 3, 122, 58, cor, !cor); // Desenha um retângulo
             ssd1306_draw_string(&ssd, "LED AZUL", 8, 10);
             ssd1306_draw_string(&ssd, "ALTERNADO", 8, 30);
             printf("LED azul alternado!\n");
         }
         ssd1306_send_data(&ssd);
     }
+}
+
+uint32_t matrix_rgb(double r, double g, double b) {
+    unsigned char R, G, B;
+    R = r * 255;
+    G = g * 255;
+    B = b * 255;
+    return (G << 24) | (R << 16) | (B << 8);
+}
+
+void exibir_numero(PIO pio, uint sm, uint8_t num) {
+
+    for (int i = 0; i < 25; i++) {
+            uint32_t color = matrix_rgb(contagem[num][i], contagem[num][i], contagem[num][i]);
+            pio_sm_put_blocking(pio, sm, color);
+        }
+
 }
